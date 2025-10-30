@@ -19,50 +19,43 @@ const {
 const salud = require("./services/saludService");
 
 // ===== APP / PORT / HOST =====
-const app = express(); // 👈 Instancia ANTES de usar app.*
-const PORT = process.env.PORT || 5000; // Railway usa process.env.PORT
+const app = express();
+const PORT = process.env.PORT || 8080; // Railway asigna PORT
 const HOST = "0.0.0.0";
 
 // ----------------------- CORS -----------------------
 const allowedOrigins = [
-  "http://localhost:5173", // dev vite
-  "http://localhost:3000", // dev CRA
-  "https://datosparalademocracia.netlify.app", // tu dominio netlify
-  /\.netlify\.app$/, // deploy previews
+  "http://localhost:5173",
+  "http://localhost:3000",
+  "https://datosparalademocracia.netlify.app",
+  /\.netlify\.app$/,
 ];
 
-// Handler manual para OPTIONS + headers
 app.use((req, res, next) => {
   const origin = req.headers.origin;
   if (origin && allowedOrigins.some((o) => (o.test ? o.test(origin) : o === origin))) {
     res.header("Access-Control-Allow-Origin", origin);
   }
   res.header("Access-Control-Allow-Credentials", "true");
-  res.header(
-    "Access-Control-Allow-Headers",
-    "Origin, X-Requested-With, Content-Type, Accept, Authorization"
-  );
+  res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
   res.header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
   if (req.method === "OPTIONS") return res.sendStatus(204);
   next();
 });
 
-// cors() con validación de origen
-app.use(
-  cors({
-    origin(origin, cb) {
-      if (!origin) return cb(null, true);
-      const ok = allowedOrigins.some((o) => (o.test ? o.test(origin) : o === origin));
-      return ok ? cb(null, true) : cb(new Error("Not allowed by CORS: " + origin));
-    },
-    credentials: true,
-  })
-);
+app.use(cors({
+  origin(origin, cb) {
+    if (!origin) return cb(null, true);
+    const ok = allowedOrigins.some((o) => (o.test ? o.test(origin) : o === origin));
+    return ok ? cb(null, true) : cb(new Error("Not allowed by CORS: " + origin));
+  },
+  credentials: true,
+}));
 
 app.use(express.json());
 
 // =====================================================
-// 🚀 ENDPOINT RAÍZ Y HEALTHCHECK
+// 🚀 ROOT & HEALTH
 // =====================================================
 app.get("/", (_req, res) => {
   res.send("✅ Backend activo y operativo en Railway");
@@ -73,7 +66,7 @@ app.get("/api/health", (_req, res) => {
 });
 
 // =====================================================
-// ==============   BANCO CENTRAL (NO TOCAR)   =========
+// ==============   BANCO CENTRAL   ====================
 // =====================================================
 app.post("/api/banco-central/obtenerSerie", async (req, res) => {
   const { USER_BC, PASS_BC } = process.env;
@@ -85,12 +78,11 @@ app.post("/api/banco-central/obtenerSerie", async (req, res) => {
     const response = await axios.get(url, { timeout: 30000 });
     res.json(response.data);
   } catch (error) {
-    console.error("❌ Error al obtener datos del Banco Central:", error.message);
-    res.status(500).json({ error: "No se pudo obtener datos del Banco Central" });
+    console.error("❌ Banco Central /obtenerSerie:", error.message);
+    res.status(500).json({ ok: false, error: "No se pudo obtener datos del Banco Central" });
   }
 });
 
-// Alias /serie
 app.post("/api/banco-central/serie", async (req, res) => {
   const { USER_BC, PASS_BC } = process.env;
   const { serieId, startDate, endDate } = req.body;
@@ -101,8 +93,8 @@ app.post("/api/banco-central/serie", async (req, res) => {
     const response = await axios.get(url, { timeout: 30000 });
     res.json(response.data);
   } catch (error) {
-    console.error("❌ Error alias /serie:", error.message);
-    res.status(500).json({ error: "No se pudo obtener datos del Banco Central" });
+    console.error("❌ Banco Central /serie:", error.message);
+    res.status(500).json({ ok: false, error: "No se pudo obtener datos del Banco Central" });
   }
 });
 
@@ -115,7 +107,7 @@ app.get("/api/trabajo/anual", async (_req, res) => {
     res.json(data);
   } catch (e) {
     console.error("❌ /trabajo/anual:", e);
-    res.status(500).json({ error: "No se pudo obtener los datos anuales de trabajo" });
+    res.status(500).json({ ok: false, error: "No se pudo obtener datos anuales" });
   }
 });
 
@@ -125,7 +117,7 @@ app.get("/api/trabajo/dataset", async (req, res) => {
     res.json(data);
   } catch (e) {
     console.error("❌ /trabajo/dataset:", e);
-    res.status(500).json({ error: "No se pudo obtener el dataset de trabajo" });
+    res.status(500).json({ ok: false, error: "No se pudo obtener dataset" });
   }
 });
 
@@ -136,7 +128,7 @@ app.get("/api/trabajo/tasas", async (req, res) => {
     res.json(data);
   } catch (e) {
     console.error("❌ /trabajo/tasas:", e);
-    res.status(500).json({ error: "No se pudieron obtener las tasas" });
+    res.status(500).json({ ok: false, error: "No se pudieron obtener tasas" });
   }
 });
 
@@ -147,7 +139,7 @@ app.get("/api/trabajo/piramide", async (req, res) => {
     res.json(data);
   } catch (e) {
     console.error("❌ /trabajo/piramide:", e);
-    res.status(500).json({ error: "No se pudo obtener la pirámide" });
+    res.status(500).json({ ok: false, error: "No se pudo obtener pirámide" });
   }
 });
 
@@ -161,7 +153,7 @@ app.get("/api/trabajo/esi/ingresos", async (req, res) => {
     res.json({ rows });
   } catch (e) {
     console.error("❌ /trabajo/esi/ingresos:", e);
-    res.status(500).json({ error: "No se pudo obtener ESI ingresos" });
+    res.status(500).json({ ok: false, error: "No se pudo obtener ESI ingresos" });
   }
 });
 
@@ -176,10 +168,26 @@ app.get("/api/trabajo/meta", async (_req, res) => {
 });
 
 // =====================================================
+// ====================== EDUCACIÓN ====================
+// (endpoints de tu servicio de educación si los usas)
+// =====================================================
+// Ejemplos (descomenta si tienes rutas en el front pidiendo esto):
+// app.get("/api/educacion/matricula/resumen", async (_req, res) => {
+//   try { res.json(await educacion.getMatriculaResumen()); }
+//   catch (e) { console.error("❌ /educacion/resumen:", e); res.status(500).json({ ok:false, error:"No se pudo obtener resumen" }); }
+// });
+// app.get("/api/educacion/series", async (_req, res) => {
+//   try { res.json(await educacion.getSeriesEducacion()); }
+//   catch (e) { console.error("❌ /educacion/series:", e); res.status(500).json({ ok:false, error:"No se pudo obtener series" }); }
+// });
+// app.get("/api/educacion/sexo", async (_req, res) => {
+//   try { res.json(await educacion.getMatriculaSexo()); }
+//   catch (e) { console.error("❌ /educacion/sexo:", e); res.status(500).json({ ok:false, error:"No se pudo obtener sexo" }); }
+// });
+
+// =====================================================
 // ======================== SALUD ======================
 // =====================================================
-
-// Helper para responder errores con detalle
 function sendError(res, e, label) {
   const code = e?.code === "CSV_MISSING" ? 400 : 500;
   const msg = e?.message || String(e);
@@ -255,35 +263,39 @@ app.get("/api/salud/region", async (req, res) => {
   }
 });
 
-// 🔎 Endpoint de diagnóstico: existencia de CSVs requeridos
+// 🔎 Diagnóstico de archivos esperados de SALUD
 app.get("/api/salud/debug/files", (_req, res) => {
   try {
     const BASE = path.join(__dirname, "data", "salud");
     const files = [
-      ["fonasa", "beneficiarios_fonasa.csv"],
-      ["fonasa", "titulares_cargas_fonasa.csv"],
-      ["fonasa", "titulares_cargas_sexo_fonasa.csv"],
-      ["isapre", "beneficiarios_isapre.csv"],
-      ["isapre", "cotizantes_cargas_isapre.csv"],
-      ["isapre", "cotizantes_cargas_sexo_isapre.csv"],
-      ["indicadores", "Participación público y privado salud en el PIB.csv"],
-      ["indicadores", "Participacion_publico_y_privado_salud_en_el_PIB.csv"],
-      ["indicadores", "Participación sector salud total en el PIB.csv"],
-      ["indicadores", "Participacion_sector_salud_total_en_el_PIB.csv"],
-      ["indicadores", "Per cápita en Salud Constante.csv"],
-      ["indicadores", "Per_capita_en_Salud_Constante.csv"],
-      ["indicadores", "Per cápita en Salud Corriente.csv"],
-      ["indicadores", "Per_capita_en_Salud_Corriente.csv"],
-      ["indicadores", "Per cápita en Salud PPA.csv"],
-      ["indicadores", "Per_capita_en_Salud_PPA.csv"],
-      ["edad_salud.csv"],
-      ["vigencia_salud.csv"],
-      ["region_salud.csv"],
-    ].map(parts => path.join(BASE, ...parts));
+      // fonasa
+      path.join(BASE, "fonasa", "beneficiarios_fonasa.csv"),
+      path.join(BASE, "fonasa", "titulares_cargas_fonasa.csv"),
+      path.join(BASE, "fonasa", "titulares_cargas_sexo_fonasa.csv"),
+      // isapre
+      path.join(BASE, "isapre", "beneficiarios_isapre.csv"),
+      path.join(BASE, "isapre", "cotizantes_cargas_isapre.csv"),
+      path.join(BASE, "isapre", "cotizantes_cargas_sexo_isapre.csv"),
+      // indicadores (nombres alternativos)
+      path.join(BASE, "indicadores", "Participación público y privado salud en el PIB.csv"),
+      path.join(BASE, "indicadores", "Participacion_publico_y_privado_salud_en_el_PIB.csv"),
+      path.join(BASE, "indicadores", "Participación sector salud total en el PIB.csv"),
+      path.join(BASE, "indicadores", "Participacion_sector_salud_total_en_el_PIB.csv"),
+      path.join(BASE, "indicadores", "Per cápita en Salud Constante.csv"),
+      path.join(BASE, "indicadores", "Per_capita_en_Salud_Constante.csv"),
+      path.join(BASE, "indicadores", "Per cápita en Salud Corriente.csv"),
+      path.join(BASE, "indicadores", "Per_capita_en_Salud_Corriente.csv"),
+      path.join(BASE, "indicadores", "Per cápita en Salud PPA.csv"),
+      path.join(BASE, "indicadores", "Per_capita_en_Salud_PPA.csv"),
+      // otros
+      path.join(BASE, "edad_salud.csv"),
+      path.join(BASE, "vigencia_salud.csv"),
+      path.join(BASE, "region_salud.csv"),
+    ];
 
     const payload = files.map(f => ({
       file: f.replace(process.cwd(), ""),
-      exists: fs.existsSync(f)
+      exists: fs.existsSync(f),
     }));
 
     res.json({ ok: true, base: BASE.replace(process.cwd(), ""), files: payload });
@@ -296,5 +308,5 @@ app.get("/api/salud/debug/files", (_req, res) => {
 // 🚀 Iniciar servidor
 // =====================================================
 app.listen(PORT, HOST, () => {
-  console.log(`🚀 Servidor Backend escuchando en http://${HOST}:${PORT}`);
+  console.log(`✅ Servidor backend 32 escuchando en http://${HOST}:${PORT}`);
 });
