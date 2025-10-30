@@ -1,3 +1,4 @@
+// index.js
 require("dotenv").config();
 const express = require("express");
 const axios = require("axios");
@@ -19,11 +20,25 @@ const {
 // ===== Servicios de Salud =====
 const salud = require("./services/saludService");
 
-// ===== APP / PORT =====
+// ===== APP / PORT / HOST =====
 const app = express();
+// Railway inyecta PORT; no lo fijes en .env en producción
 const PORT = process.env.PORT || 5000;
+// IMP: escuchar en 0.0.0.0 (no en localhost) para que sea accesible externamente
+const HOST = "0.0.0.0";
 
-app.use(cors());
+// ---------- CORS ----------
+app.use(
+  cors({
+    origin: [
+      "https://statuesque-cheesecake-436272.netlify.app", // tu front en Netlify
+      "http://localhost:5173", // Vite dev
+      "http://localhost:3000", // CRA/Next dev
+    ],
+    credentials: true,
+  })
+);
+
 app.use(express.json());
 
 // ----------------------- Healthcheck -----------------------
@@ -45,9 +60,7 @@ app.post("/api/banco-central/obtenerSerie", async (req, res) => {
     res.json(response.data);
   } catch (error) {
     console.error("❌ Error al obtener datos:", error.message);
-    res
-      .status(500)
-      .json({ error: "No se pudo obtener datos del Banco Central" });
+    res.status(500).json({ error: "No se pudo obtener datos del Banco Central" });
   }
 });
 
@@ -79,9 +92,7 @@ app.get("/api/trabajo/anual", async (_req, res) => {
     res.json(data);
   } catch (e) {
     console.error("❌ /trabajo/anual:", e);
-    res
-      .status(500)
-      .json({ error: "No se pudo obtener los datos anuales de trabajo" });
+    res.status(500).json({ error: "No se pudo obtener los datos anuales de trabajo" });
   }
 });
 
@@ -92,9 +103,7 @@ app.get("/api/trabajo/dataset", async (req, res) => {
     res.json(data);
   } catch (e) {
     console.error("❌ /trabajo/dataset:", e);
-    res
-      .status(500)
-      .json({ error: "No se pudo obtener el dataset de trabajo" });
+    res.status(500).json({ error: "No se pudo obtener el dataset de trabajo" });
   }
 });
 
@@ -159,9 +168,7 @@ app.get("/api/salud/beneficiarios", async (_req, res) => {
     res.json({ rows });
   } catch (e) {
     console.error("❌ /salud/beneficiarios:", e);
-    res
-      .status(500)
-      .json({ error: "No se pudo obtener beneficiarios" });
+    res.status(500).json({ error: "No se pudo obtener beneficiarios" });
   }
 });
 
@@ -173,9 +180,7 @@ app.get("/api/salud/tipo", async (req, res) => {
     res.json(data);
   } catch (e) {
     console.error("❌ /salud/tipo:", e);
-    res
-      .status(500)
-      .json({ error: "No se pudo obtener tipo de beneficiario" });
+    res.status(500).json({ error: "No se pudo obtener tipo de beneficiario" });
   }
 });
 
@@ -187,9 +192,7 @@ app.get("/api/salud/sexo", async (req, res) => {
     res.json(data);
   } catch (e) {
     console.error("❌ /salud/sexo:", e);
-    res
-      .status(500)
-      .json({ error: "No se pudo obtener distribución por sexo" });
+    res.status(500).json({ error: "No se pudo obtener distribución por sexo" });
   }
 });
 
@@ -200,9 +203,7 @@ app.get("/api/salud/indicadores/:key", async (req, res) => {
     res.json({ rows });
   } catch (e) {
     console.error("❌ /salud/indicadores:", e);
-    res
-      .status(500)
-      .json({ error: "No se pudo obtener el indicador" });
+    res.status(500).json({ error: "No se pudo obtener el indicador" });
   }
 });
 
@@ -218,19 +219,15 @@ app.get("/api/salud/edad", async (req, res) => {
   }
 });
 
-// Vigencia (placeholder)
+// Vigencia (fix: antes devolvía 500 en el try)
 app.get("/api/salud/vigencia", async (req, res) => {
   try {
     const { year } = req.query;
     const data = await salud.getVigencia({ year });
-    res
-      .status(500)
-      .json({ error: "No se pudo obtener vigencia" });
+    res.json(data);
   } catch (e) {
     console.error("❌ /salud/vigencia:", e);
-    res
-      .status(500)
-      .json({ error: "No se pudo obtener vigencia" });
+    res.status(500).json({ error: "No se pudo obtener vigencia" });
   }
 });
 
@@ -242,52 +239,11 @@ app.get("/api/salud/region", async (req, res) => {
     res.json(data);
   } catch (e) {
     console.error("❌ /salud/region:", e);
-    res
-      .status(500)
-      .json({ error: "No se pudo obtener región" });
-  }
-});
-
-// ===================================================================
-// ===================== EDUCACION ===================================
-// ===================================================================
-
-// --- 1. Resumen total matrícula (serie total anual + último año disponible) ---
-app.get("/api/educacion/matricula/resumen", async (_req, res) => {
-  try {
-    const data = await educacion.getMatriculaResumen();
-    res.json(data);
-  } catch (e) {
-    console.error("❌ /educacion/matricula/resumen:", e);
-    res.status(500).json({ error: "No se pudo obtener el resumen" });
-  }
-});
-
-// --- 2. Series por nivel educativo (Parvularia, Básica, Media, etc.) ---
-app.get("/api/educacion/series", async (_req, res) => {
-  try {
-    const data = await educacion.getSeriesEducacion();
-    res.json(data);
-  } catch (e) {
-    console.error("❌ /educacion/series:", e);
-    res.status(500).json({ error: "No se pudo obtener las series" });
-  }
-});
-
-// --- 3. Distribución por sexo (donut último año) ---
-app.get("/api/educacion/sexo", async (_req, res) => {
-  try {
-    const data = await educacion.getMatriculaSexo();
-    res.json(data);
-  } catch (e) {
-    console.error("❌ /educacion/sexo:", e);
-    res.status(500).json({
-      error: "No se pudo obtener la información por sexo",
-    });
+    res.status(500).json({ error: "No se pudo obtener región" });
   }
 });
 
 // ----------------------- Server -----------------------
-app.listen(PORT, () => {
-  console.log(`🚀 Servidor Backend escuchando en http://localhost:${PORT}`);
+app.listen(PORT, HOST, () => {
+  console.log(`🚀 Servidor Backend escuchando en http://${HOST}:${PORT}`);
 });
