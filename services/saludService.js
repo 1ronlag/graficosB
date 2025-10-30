@@ -1,7 +1,7 @@
-// backend/services/saludService.js
+// backend/services/saludService.js (versión robusta)
 const fs = require("fs");
 const path = require("path");
-const { parse } = require("csv-parse/sync");
+const { parse } = require("csv-parse");
 
 // ================== RUTAS BASE ==================
 const DATA_DIR = path.join(__dirname, "..", "data", "salud");
@@ -10,26 +10,42 @@ const ISAPRE_DIR = path.join(DATA_DIR, "isapre");
 const INDICADORES_DIR = path.join(DATA_DIR, "indicadores");
 
 // ================== HELPERS ==================
-function readCsv(p) {
-  const raw = fs.readFileSync(p, "utf8");
-  return parse(raw, { columns: true, skip_empty_lines: true });
+function detectSeparator(headerLine) {
+  if (!headerLine) return ",";
+  return headerLine.includes(";") ? ";" : ",";
 }
-
-function tryReadCsv(fileCandidates) {
-  for (const fname of fileCandidates) {
-    const p = path.join(...fname);
-    if (fs.existsSync(p)) return readCsv(p);
+function createParser(sep) {
+  return parse({
+    columns: (h) => h.map((x) => String(x || "").trim()),
+    bom: true,
+    delimiter: sep,
+    relax_column_count: true,
+    skip_empty_lines: true,
+    trim: true,
+  });
+}
+async function readCsvFlexible(filePath) {
+  if (!fs.existsSync(filePath)) {
+    throw new Error(`CSV no encontrado: ${filePath}`);
   }
-  throw new Error("Archivo no encontrado: " + JSON.stringify(fileCandidates));
+  const first = fs.readFileSync(filePath, "utf8");
+  const headerLine = (first.split(/\r?\n/)[0] || "").replace(/^\uFEFF/, "");
+  const sep = detectSeparator(headerLine);
+  return new Promise((resolve, reject) => {
+    const out = [];
+    fs.createReadStream(filePath, { encoding: "utf8" })
+      .pipe(createParser(sep))
+      .on("data", (row) => out.push(row))
+      .on("end", () => resolve(out))
+      .on("error", reject);
+  });
 }
-
 const normStr = (s) =>
   String(s ?? "")
     .normalize("NFD")
     .replace(/\p{Diacritic}/gu, "")
     .trim()
     .toUpperCase();
-
 const toInt = (x) => {
   if (x == null) return 0;
   const s = String(x).trim();
@@ -37,53 +53,59 @@ const toInt = (x) => {
   const n = Number(normalized);
   return Number.isFinite(n) ? Math.round(n) : 0;
 };
-
 const toFloat = (x) => {
   if (x == null) return 0;
-  const s = String(x).trim();
-  const normalized = s.replace(/\s/g, "").replace(/,/g, ".");
-  const n = Number(normalized);
+  const s = String(x).trim().replace(/\s/g, "").replace(/,/g, ".");
+  const n = Number(s);
   return Number.isFinite(n) ? n : 0;
 };
+function ensureFiles(files) {
+  const missing = files.filter((f) => !fs.existsSync(f));
+  if (missing.length) {
+    const list = missing.map((p) => p.replace(process.cwd(), "")).join("\n - ");
+    const e = new Error("Faltan CSV requeridos:\n - " + list);
+    e.code = "CSV_MISSING";
+    throw e;
+  }
+}
 
 // 1) Beneficiarios por año
 async function getBeneficiarios() {
-  const fonasa = readCsv(path.join(FONASA_DIR, "beneficiarios_fonasa.csv"));
-  const isapre = readCsv(path.join(ISAPRE_DIR, "beneficiarios_isapre.csv"));
+  const reqFiles = [
+    path.join(FONASA_DIR, "beneficiarios_fonasa.csv"),
+    path.join(ISAPRE_DIR, "beneficiarios_isapre.csv"),
+  ];
+  ensureFiles(reqFiles);
+
+  const fonasa = await readCsvFlexible(reqFiles[0]);
+  const isapre = await readCsvFlexible(reqFiles[1]);
 
   const map = new Map();
-
   fonasa.forEach((r) => {
-    const y = String(r.ANIO ?? r.Anio ?? r.AÑO ?? r.anio);
+    const y = String(r.ANIO ?? r.Anio ?? r.AÑO ?? r.anio ?? r["Año"] ?? "").trim();
     if (!y) return;
-    map.set(y, {
-      anio: y,
-      fonasa: toInt(r.BENEFICIARIOS),
-      isapre: undefined,
-    });
+    map.set(y, { anio: y, fonasa: toInt(r.BENEFICIARIOS), isapre: undefined });
   });
-
   isapre.forEach((r) => {
-    const y = String(r.ANIO ?? r.Anio ?? r.AÑO ?? r.anio);
+    const y = String(r.ANIO ?? r.Anio ?? r.AÑO ?? r.anio ?? r["Año"] ?? "").trim();
     if (!y) return;
     const row = map.get(y) || { anio: y };
     row.isapre = toInt(r.BENEFICIARIOS);
     map.set(y, row);
   });
-
-  return Array.from(map.values()).sort(
-    (a, b) => Number(a.anio) - Number(b.anio)
-  );
+  return Array.from(map.values()).sort((a, b) => Number(a.anio) - Number(b.anio));
 }
 
 // 2) Titular/Carga por sistema
 async function getTipoBeneficiario({ year } = {}) {
-  const fonasa = readCsv(
-    path.join(FONASA_DIR, "titulares_cargas_fonasa.csv")
-  );
-  const isapre = readCsv(
-    path.join(ISAPRE_DIR, "cotizantes_cargas_isapre.csv")
-  );
+  const reqFiles = [
+    path.join(FONASA_DIR, "titulares_cargas_fonasa.csv"),
+    path.join(ISAPRE_DIR, "cotizantes_cargas_isapre.csv"),
+  ];
+  ensureFiles(reqFiles);
+
+  const fonasa = await readCsvFlexible(reqFiles[0]);
+  const isapre = await readCsvFlexible(reqFiles[1]);
 
   const normIsapreTipo = (s) => {
     const t = normStr(s);
@@ -92,38 +114,22 @@ async function getTipoBeneficiario({ year } = {}) {
     return t;
   };
 
-  const yearsF = new Set(fonasa.map((r) => Number(r["AÑO"])).filter(Boolean));
-  const yearsI = new Set(isapre.map((r) => Number(r["AÑO"])).filter(Boolean));
-
+  const yearsF = new Set(fonasa.map((r) => Number(r["AÑO"] ?? r["Anio"] ?? r["ANIO"])).filter(Boolean));
+  const yearsI = new Set(isapre.map((r) => Number(r["AÑO"] ?? r["Anio"] ?? r["ANIO"])).filter(Boolean));
   let y;
   if (year) {
     y = Number(year);
   } else {
-    const inter = [...yearsF]
-      .filter((yy) => yearsI.has(yy))
-      .sort((a, b) => a - b);
-    y = inter.length
-      ? inter[inter.length - 1]
-      : Math.max(...[...yearsF, ...yearsI]);
+    const inter = [...yearsF].filter((yy) => yearsI.has(yy)).sort((a, b) => a - b);
+    y = inter.length ? inter.at(-1) : Math.max(...[...yearsF, ...yearsI]);
+    if (!Number.isFinite(y)) y = null;
   }
 
-  const FT = fonasa.find(
-    (r) => Number(r["AÑO"]) === y && normStr(r.TITULAR_CARGA) === "TITULAR"
-  )?.POBLACION;
-  const FC = fonasa.find(
-    (r) => Number(r["AÑO"]) === y && normStr(r.TITULAR_CARGA) === "CARGA"
-  )?.POBLACION;
+  const FT = fonasa.find((r) => Number(r["AÑO"] ?? r["ANIO"]) === y && normStr(r.TITULAR_CARGA) === "TITULAR")?.POBLACION;
+  const FC = fonasa.find((r) => Number(r["AÑO"] ?? r["ANIO"]) === y && normStr(r.TITULAR_CARGA) === "CARGA")?.POBLACION;
 
-  const IT = isapre.find(
-    (r) =>
-      Number(r["AÑO"]) === y &&
-      normIsapreTipo(r.COTIZANTE_CARGA) === "COTIZANTES"
-  )?.POBLACION;
-  const IC = isapre.find(
-    (r) =>
-      Number(r["AÑO"]) === y &&
-      normIsapreTipo(r.COTIZANTE_CARGA) === "CARGAS"
-  )?.POBLACION;
+  const IT = isapre.find((r) => Number(r["AÑO"] ?? r["ANIO"]) === y && normIsapreTipo(r.COTIZANTE_CARGA) === "COTIZANTES")?.POBLACION;
+  const IC = isapre.find((r) => Number(r["AÑO"] ?? r["ANIO"]) === y && normIsapreTipo(r.COTIZANTE_CARGA) === "CARGAS")?.POBLACION;
 
   return {
     year: y,
@@ -134,28 +140,27 @@ async function getTipoBeneficiario({ year } = {}) {
   };
 }
 
-// 3) Distribución por sexo (Titular+Carga / Cotizante+Carga)
+// 3) Distribución por sexo
 async function getSexo({ year } = {}) {
-  const F = readCsv(
-    path.join(FONASA_DIR, "titulares_cargas_sexo_fonasa.csv")
-  );
-  const I = readCsv(
-    path.join(ISAPRE_DIR, "cotizantes_cargas_sexo_isapre.csv")
-  );
+  const reqFiles = [
+    path.join(FONASA_DIR, "titulares_cargas_sexo_fonasa.csv"),
+    path.join(ISAPRE_DIR, "cotizantes_cargas_sexo_isapre.csv"),
+  ];
+  ensureFiles(reqFiles);
 
-  const yearsF = new Set(F.map((r) => Number(r["AÑO"])).filter(Boolean));
-  const yearsI = new Set(I.map((r) => Number(r["AÑO"])).filter(Boolean));
+  const F = await readCsvFlexible(reqFiles[0]);
+  const I = await readCsvFlexible(reqFiles[1]);
+
+  const yearsF = new Set(F.map((r) => Number(r["AÑO"] ?? r["ANIO"])).filter(Boolean));
+  const yearsI = new Set(I.map((r) => Number(r["AÑO"] ?? r["ANIO"])).filter(Boolean));
 
   let y;
   if (year) {
     y = Number(year);
   } else {
-    const inter = [...yearsF]
-      .filter((yy) => yearsI.has(yy))
-      .sort((a, b) => a - b);
-    y = inter.length
-      ? inter[inter.length - 1]
-      : Math.max(...[...yearsF, ...yearsI]);
+    const inter = [...yearsF].filter((yy) => yearsI.has(yy)).sort((a, b) => a - b);
+    y = inter.length ? inter.at(-1) : Math.max(...[...yearsF, ...yearsI]);
+    if (!Number.isFinite(y)) y = null;
   }
 
   const mapSexo = (s) => {
@@ -169,15 +174,13 @@ async function getSexo({ year } = {}) {
   function sumBySexo(rows, y, sexoMapper = (x) => normStr(x)) {
     const agg = {};
     rows
-      .filter((r) => Number(r["AÑO"]) === y)
+      .filter((r) => Number(r["AÑO"] ?? r["ANIO"]) === y)
       .forEach((r) => {
         const k = sexoMapper(r.SEXO);
         agg[k] = (agg[k] || 0) + toInt(r.POBLACION);
       });
     const order = ["HOMBRE", "MUJER", "INDETERMINADO"];
-    return order
-      .filter((k) => agg[k])
-      .map((k) => ({ name: k, value: agg[k] }));
+    return order.filter((k) => agg[k]).map((k) => ({ name: k, value: agg[k] }));
   }
 
   return {
@@ -187,7 +190,7 @@ async function getSexo({ year } = {}) {
   };
 }
 
-// 4) Indicadores macro (los excels convertidos a CSV)
+// 4) Indicadores macro
 async function getIndicador(nombre) {
   const files = {
     publico_privado_pib: [
@@ -211,114 +214,72 @@ async function getIndicador(nombre) {
       [INDICADORES_DIR, "Per_capita_en_Salud_PPA.csv"],
     ],
   };
-
   if (!files[nombre]) {
     throw new Error("Indicador no soportado: " + nombre);
   }
-
-  const rows = tryReadCsv(files[nombre]); // array objetos
-  const cols = Object.keys(rows[0] || {});
-  const colYear =
-    cols.find((c) => c.trim() === "-") ||
-    cols.find((c) => /anio|año|year/i.test(c));
-
-  if (cols.includes("Privado") && cols.includes("Público")) {
-    return rows.map((r) => ({
-      anio: String(r[colYear]),
-      privado: toFloat(r["Privado"]),
-      publico: toFloat(r["Público"]),
-    }));
+  // intenta en orden hasta encontrar uno
+  for (const parts of files[nombre]) {
+    const p = path.join(...parts);
+    if (fs.existsSync(p)) {
+      const rows = await readCsvFlexible(p);
+      const cols = Object.keys(rows[0] || {});
+      const colYear = cols.find((c) => c.trim() === "-") || cols.find((c) => /anio|año|year/i.test(c));
+      if (cols.includes("Privado") && cols.includes("Público")) {
+        return rows.map((r) => ({ anio: String(r[colYear]), privado: toFloat(r["Privado"]), publico: toFloat(r["Público"]) }));
+      }
+      const colSaludPIB = cols.find((c) => /Salud % PIB/i.test(c));
+      if (colSaludPIB) return rows.map((r) => ({ anio: String(r[colYear]), valor: toFloat(r[colSaludPIB]) }));
+      const colPerCapita =
+        cols.find((c) => /Gasto per cápita en salud/i.test(c)) ||
+        cols.find((c) => /Gasto per capita en salud/i.test(c));
+      if (colPerCapita) return rows.map((r) => ({ anio: String(r[colYear]), valor: toFloat(r[colPerCapita]) }));
+      return rows;
+    }
   }
-
-  const colSaludPIB = cols.find((c) => /Salud % PIB/i.test(c));
-  if (colSaludPIB) {
-    return rows.map((r) => ({
-      anio: String(r[colYear]),
-      valor: toFloat(r[colSaludPIB]),
-    }));
-  }
-
-  const colPerCapita =
-    cols.find((c) => /Gasto per cápita en salud/i.test(c)) ||
-    cols.find((c) => /Gasto per capita en salud/i.test(c));
-
-  if (colPerCapita) {
-    return rows.map((r) => ({
-      anio: String(r[colYear]),
-      valor: toFloat(r[colPerCapita]),
-    }));
-  }
-
-  return rows;
+  throw new Error("Archivo de indicador no encontrado (intentados múltiples nombres).");
 }
 
-// 5) Otros (edad / vigencia / región) - opcionales
+// 5) Otros (edad / vigencia / región)
 async function getEdad({ year } = {}) {
   const p = path.join(DATA_DIR, "edad_salud.csv");
-  if (!fs.existsSync(p)) {
-    return {
-      ok: false,
-      message: "Falta backend/data/salud/edad_salud.csv",
-    };
-  }
-  const rows = readCsv(p); // AÑO,TRAMO_EDAD,POBLACION
-  const ys = [...new Set(rows.map((r) => Number(r["AÑO"])))].filter(Boolean);
+  if (!fs.existsSync(p)) return { ok: false, message: "Falta backend/data/salud/edad_salud.csv" };
+  const rows = await readCsvFlexible(p);
+  const ys = [...new Set(rows.map((r) => Number(r["AÑO"] ?? r["ANIO"])))].filter(Boolean);
   const y = Number(year) || Math.max(...ys);
   return {
     ok: true,
     year: y,
     rows: rows
-      .filter((r) => Number(r["AÑO"]) === y)
-      .map((r) => ({
-        tramo: r.TRAMO_EDAD,
-        poblacion: toInt(r.POBLACION),
-      })),
+      .filter((r) => Number(r["AÑO"] ?? r["ANIO"]) === y)
+      .map((r) => ({ tramo: r.TRAMO_EDAD, poblacion: toInt(r.POBLACION) })),
   };
 }
-
 async function getVigencia({ year } = {}) {
   const p = path.join(DATA_DIR, "vigencia_salud.csv");
-  if (!fs.existsSync(p)) {
-    return {
-      ok: false,
-      message: "Falta backend/data/salud/vigencia_salud.csv",
-    };
-  }
-  const rows = readCsv(p); // AÑO,VIGENCIA,POBLACION
-  const ys = [...new Set(rows.map((r) => Number(r["AÑO"])))].filter(Boolean);
+  if (!fs.existsSync(p)) return { ok: false, message: "Falta backend/data/salud/vigencia_salud.csv" };
+  const rows = await readCsvFlexible(p);
+  const ys = [...new Set(rows.map((r) => Number(r["AÑO"] ?? r["ANIO"])))].filter(Boolean);
   const y = Number(year) || Math.max(...ys);
   return {
     ok: true,
     year: y,
     rows: rows
-      .filter((r) => Number(r["AÑO"] === y))
-      .map((r) => ({
-        vigencia: r.VIGENCIA,
-        poblacion: toInt(r.POBLACION),
-      })),
+      .filter((r) => Number(r["AÑO"] ?? r["ANIO"]) === y) // ✅ paréntesis corregido
+      .map((r) => ({ vigencia: r.VIGENCIA, poblacion: toInt(r.POBLACION) })),
   };
 }
-
 async function getRegion({ year } = {}) {
   const p = path.join(DATA_DIR, "region_salud.csv");
-  if (!fs.existsSync(p)) {
-    return {
-      ok: false,
-      message: "Falta backend/data/salud/region_salud.csv",
-    };
-  }
-  const rows = readCsv(p); // AÑO,REGION,POBLACION
-  const ys = [...new Set(rows.map((r) => Number(r["AÑO"])))].filter(Boolean);
+  if (!fs.existsSync(p)) return { ok: false, message: "Falta backend/data/salud/region_salud.csv" };
+  const rows = await readCsvFlexible(p);
+  const ys = [...new Set(rows.map((r) => Number(r["AÑO"] ?? r["ANIO"])))].filter(Boolean);
   const y = Number(year) || Math.max(...ys);
   return {
     ok: true,
     year: y,
     rows: rows
-      .filter((r) => Number(r["AÑO"]) === y)
-      .map((r) => ({
-        region: r.REGION,
-        poblacion: toInt(r.POBLACION),
-      })),
+      .filter((r) => Number(r["AÑO"] ?? r["ANIO"]) === y)
+      .map((r) => ({ region: r.REGION, poblacion: toInt(r.POBLACION) })),
   };
 }
 
