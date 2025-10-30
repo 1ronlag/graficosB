@@ -4,10 +4,8 @@ const express = require("express");
 const axios = require("axios");
 const cors = require("cors");
 
-// ===== Servicios de Educación (lee CSV consolidados) =====
+// ===== Servicios =====
 const educacion = require("./services/educacionService");
-
-// ===== Servicios de Trabajo =====
 const {
   getAnual,
   getDataset,
@@ -16,28 +14,47 @@ const {
   getESIIngresos,
   getMeta,
 } = require("./services/trabajoService");
-
-// ===== Servicios de Salud =====
 const salud = require("./services/saludService");
 
 // ===== APP / PORT / HOST =====
 const app = express();
-// Railway inyecta PORT; no lo fijes en .env en producción
+// En Railway, usa SIEMPRE process.env.PORT
 const PORT = process.env.PORT || 5000;
-// IMP: escuchar en 0.0.0.0 (no en localhost) para que sea accesible externamente
 const HOST = "0.0.0.0";
 
 // ---------- CORS ----------
-app.use(
-  cors({
-    origin: [
-      "https://statuesque-cheesecake-436272.netlify.app", // tu front en Netlify
-      "http://localhost:5173", // Vite dev
-      "http://localhost:3000", // CRA/Next dev
-    ],
-    credentials: true,
-  })
-);
+const allowedOrigins = [
+  "http://localhost:5173",                 // Vite dev
+  "http://localhost:3000",                 // CRA/Next dev
+  "https://datosparalademocracia.netlify.app", // tu front en Netlify (prod)
+  /\.netlify\.app$/                        // deploy previews *.netlify.app
+];
+
+app.use((req, res, next) => {
+  // Permitir health checks y herramientas sin Origin
+  const origin = req.headers.origin;
+  if (!origin) return next();
+  const ok = allowedOrigins.some((o) => (o.test ? o.test(origin) : o === origin));
+  if (ok) {
+    res.header("Access-Control-Allow-Origin", origin);
+    res.header("Vary", "Origin");
+  }
+  res.header("Access-Control-Allow-Credentials", "true");
+  res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
+  res.header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
+  if (req.method === "OPTIONS") return res.sendStatus(204);
+  next();
+});
+
+// Si prefieres usar cors() además del handler manual:
+app.use(cors({
+  origin(origin, cb) {
+    if (!origin) return cb(null, true);
+    const ok = allowedOrigins.some((o) => (o.test ? o.test(origin) : o === origin));
+    return ok ? cb(null, true) : cb(new Error("Not allowed by CORS: " + origin));
+  },
+  credentials: true,
+}));
 
 app.use(express.json());
 
@@ -56,7 +73,7 @@ app.post("/api/banco-central/obtenerSerie", async (req, res) => {
   const url = `https://si3.bcentral.cl/SieteRestWS/SieteRestWS.ashx?user=${USER_BC}&pass=${PASS_BC}&function=GetSeries&timeseries=${serieId}&firstdate=${startDate}&lastdate=${endDate}`;
 
   try {
-    const response = await axios.get(url);
+    const response = await axios.get(url, { timeout: 30000 });
     res.json(response.data);
   } catch (error) {
     console.error("❌ Error al obtener datos:", error.message);
@@ -71,21 +88,17 @@ app.post("/api/banco-central/serie", async (req, res) => {
   const url = `https://si3.bcentral.cl/SieteRestWS/SieteRestWS.ashx?user=${USER_BC}&pass=${PASS_BC}&function=GetSeries&timeseries=${serieId}&firstdate=${startDate}&lastdate=${endDate}`;
 
   try {
-    const response = await axios.get(url);
+    const response = await axios.get(url, { timeout: 30000 });
     res.json(response.data);
   } catch (error) {
     console.error("❌ Error al obtener datos (alias /serie):", error.message);
-    res.status(500).json({
-      error: "No se pudo obtener datos del Banco Central (alias /serie)",
-    });
+    res.status(500).json({ error: "No se pudo obtener datos del Banco Central (alias /serie)" });
   }
 });
 
 // ===================================================================
 // =======================   TRABAJO   ================================
 // ===================================================================
-
-// Anual (2018–2024): { rows: [...] }
 app.get("/api/trabajo/anual", async (_req, res) => {
   try {
     const data = await getAnual();
@@ -96,7 +109,6 @@ app.get("/api/trabajo/anual", async (_req, res) => {
   }
 });
 
-// Dataset ENE completo (permite filtros por query si los envías)
 app.get("/api/trabajo/dataset", async (req, res) => {
   try {
     const data = await getDataset(req.query);
@@ -107,7 +119,6 @@ app.get("/api/trabajo/dataset", async (req, res) => {
   }
 });
 
-// Tasas ENE (TD, TO, TP, TPL, SU1–SU4, TOI, TOSI)
 app.get("/api/trabajo/tasas", async (req, res) => {
   try {
     const { periodo, sexo } = req.query;
@@ -119,7 +130,6 @@ app.get("/api/trabajo/tasas", async (req, res) => {
   }
 });
 
-// Pirámide PET/FDT/OC/... (por periodo, ej: 2024T2)
 app.get("/api/trabajo/piramide", async (req, res) => {
   try {
     const { periodo } = req.query;
@@ -131,7 +141,6 @@ app.get("/api/trabajo/piramide", async (req, res) => {
   }
 });
 
-// ESI Ingresos (array en {rows}: [{ anio, total, hombres, mujeres }])
 app.get("/api/trabajo/esi/ingresos", async (req, res) => {
   try {
     const { anioDesde, anioHasta } = req.query;
@@ -146,7 +155,6 @@ app.get("/api/trabajo/esi/ingresos", async (req, res) => {
   }
 });
 
-// (Opcional) Meta: cuenta filas y muestra años min/max por archivo CSV
 app.get("/api/trabajo/meta", async (_req, res) => {
   try {
     const meta = await getMeta();
@@ -160,8 +168,6 @@ app.get("/api/trabajo/meta", async (_req, res) => {
 // ===================================================================
 // ======================== SALUD ====================================
 // ===================================================================
-
-// Beneficiarios por año — FONASA vs ISAPRE
 app.get("/api/salud/beneficiarios", async (_req, res) => {
   try {
     const rows = await salud.getBeneficiarios();
@@ -172,7 +178,6 @@ app.get("/api/salud/beneficiarios", async (_req, res) => {
   }
 });
 
-// Titular/Carga (último año común o ?year=YYYY)
 app.get("/api/salud/tipo", async (req, res) => {
   try {
     const { year } = req.query;
@@ -184,7 +189,6 @@ app.get("/api/salud/tipo", async (req, res) => {
   }
 });
 
-// Sexo (último año común o ?year=YYYY)
 app.get("/api/salud/sexo", async (req, res) => {
   try {
     const { year } = req.query;
@@ -196,7 +200,6 @@ app.get("/api/salud/sexo", async (req, res) => {
   }
 });
 
-// Indicadores (CSV convertidos de Excel)
 app.get("/api/salud/indicadores/:key", async (req, res) => {
   try {
     const rows = await salud.getIndicador(req.params.key);
@@ -207,7 +210,6 @@ app.get("/api/salud/indicadores/:key", async (req, res) => {
   }
 });
 
-// Edad (placeholder / datos por edad)
 app.get("/api/salud/edad", async (req, res) => {
   try {
     const { year } = req.query;
@@ -219,7 +221,6 @@ app.get("/api/salud/edad", async (req, res) => {
   }
 });
 
-// Vigencia (fix: antes devolvía 500 en el try)
 app.get("/api/salud/vigencia", async (req, res) => {
   try {
     const { year } = req.query;
@@ -231,7 +232,6 @@ app.get("/api/salud/vigencia", async (req, res) => {
   }
 });
 
-// Región (por año)
 app.get("/api/salud/region", async (req, res) => {
   try {
     const { year } = req.query;
