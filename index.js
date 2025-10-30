@@ -1,4 +1,4 @@
-// index.js
+// ======================= index.js ==========================
 require("dotenv").config();
 const express = require("express");
 const axios = require("axios");
@@ -18,26 +18,22 @@ const salud = require("./services/saludService");
 
 // ===== APP / PORT / HOST =====
 const app = express();
-// En Railway, usa SIEMPRE process.env.PORT
+// Railway requiere usar process.env.PORT
 const PORT = process.env.PORT || 5000;
 const HOST = "0.0.0.0";
 
-// ---------- CORS ----------
+// ----------------------- CORS -----------------------
 const allowedOrigins = [
-  "http://localhost:5173",                 // Vite dev
-  "http://localhost:3000",                 // CRA/Next dev
-  "https://datosparalademocracia.netlify.app", // tu front en Netlify (prod)
-  /\.netlify\.app$/                        // deploy previews *.netlify.app
+  "http://localhost:5173", // dev vite
+  "http://localhost:3000", // dev CRA
+  "https://datosparalademocracia.netlify.app", // ✅ dominio netlify
+  /\.netlify\.app$/, // permite previews
 ];
 
 app.use((req, res, next) => {
-  // Permitir health checks y herramientas sin Origin
   const origin = req.headers.origin;
-  if (!origin) return next();
-  const ok = allowedOrigins.some((o) => (o.test ? o.test(origin) : o === origin));
-  if (ok) {
+  if (origin && allowedOrigins.some((o) => (o.test ? o.test(origin) : o === origin))) {
     res.header("Access-Control-Allow-Origin", origin);
-    res.header("Vary", "Origin");
   }
   res.header("Access-Control-Allow-Credentials", "true");
   res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept, Authorization");
@@ -46,7 +42,6 @@ app.use((req, res, next) => {
   next();
 });
 
-// Si prefieres usar cors() además del handler manual:
 app.use(cors({
   origin(origin, cb) {
     if (!origin) return cb(null, true);
@@ -58,14 +53,22 @@ app.use(cors({
 
 app.use(express.json());
 
-// ----------------------- Healthcheck -----------------------
+// =====================================================
+// 🚀 ENDPOINT RAÍZ Y HEALTHCHECK
+// =====================================================
+
+app.get("/", (_req, res) => {
+  res.send("✅ Backend activo y operativo en Railway");
+});
+
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", time: new Date().toISOString() });
 });
 
-// ===================================================================
-// ==============   BANCO CENTRAL (NO TOCAR)   =======================
-// ===================================================================
+// =====================================================
+// ==============   BANCO CENTRAL (NO TOCAR)   =========
+// =====================================================
+
 app.post("/api/banco-central/obtenerSerie", async (req, res) => {
   const { USER_BC, PASS_BC } = process.env;
   const { serieId, startDate, endDate } = req.body;
@@ -76,11 +79,12 @@ app.post("/api/banco-central/obtenerSerie", async (req, res) => {
     const response = await axios.get(url, { timeout: 30000 });
     res.json(response.data);
   } catch (error) {
-    console.error("❌ Error al obtener datos:", error.message);
+    console.error("❌ Error al obtener datos del Banco Central:", error.message);
     res.status(500).json({ error: "No se pudo obtener datos del Banco Central" });
   }
 });
 
+// Alias /serie
 app.post("/api/banco-central/serie", async (req, res) => {
   const { USER_BC, PASS_BC } = process.env;
   const { serieId, startDate, endDate } = req.body;
@@ -91,14 +95,15 @@ app.post("/api/banco-central/serie", async (req, res) => {
     const response = await axios.get(url, { timeout: 30000 });
     res.json(response.data);
   } catch (error) {
-    console.error("❌ Error al obtener datos (alias /serie):", error.message);
-    res.status(500).json({ error: "No se pudo obtener datos del Banco Central (alias /serie)" });
+    console.error("❌ Error alias /serie:", error.message);
+    res.status(500).json({ error: "No se pudo obtener datos del Banco Central" });
   }
 });
 
-// ===================================================================
-// =======================   TRABAJO   ================================
-// ===================================================================
+// =====================================================
+// ====================   TRABAJO   ====================
+// =====================================================
+
 app.get("/api/trabajo/anual", async (_req, res) => {
   try {
     const data = await getAnual();
@@ -165,9 +170,10 @@ app.get("/api/trabajo/meta", async (_req, res) => {
   }
 });
 
-// ===================================================================
-// ======================== SALUD ====================================
-// ===================================================================
+// =====================================================
+// ====================== SALUD ========================
+// =====================================================
+
 app.get("/api/salud/beneficiarios", async (_req, res) => {
   try {
     const rows = await salud.getBeneficiarios();
@@ -243,7 +249,9 @@ app.get("/api/salud/region", async (req, res) => {
   }
 });
 
-// ----------------------- Server -----------------------
+// =====================================================
+// 🚀 Iniciar servidor
+// =====================================================
 app.listen(PORT, HOST, () => {
   console.log(`🚀 Servidor Backend escuchando en http://${HOST}:${PORT}`);
 });
