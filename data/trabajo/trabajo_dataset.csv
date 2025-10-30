@@ -1,0 +1,9 @@
+anio,mes,region,sexo,tramo_edad,sector,tasa_ocupacion,tasa_desempleo,ingreso_promedio,cotiza_prevision,cotiza_salud,jornada
+2023,6,Metropolitana,Hombre,25-34,Servicios,65.4,8.2,720000,1,1,Completa
+2023,6,Metropolitana,Mujer,25-34,Servicios,55.1,9.3,650000,1,1,Completa
+2023,6,Biobío,Hombre,35-44,Industria,68.2,7.5,710000,1,1,Completa
+2023,6,Biobío,Mujer,35-44,Industria,52.3,10.1,590000,0,1,Parcial
+2024,6,Metropolitana,Hombre,25-34,Servicios,66.2,7.9,740000,1,1,Completa
+2024,6,Metropolitana,Mujer,25-34,Servicios,57.0,8.8,670000,1,1,Completa
+2024,6,Biobío,Hombre,35-44,Industria,69.0,7.0,730000,1,1,Completa
+2024,6,Biobío,Mujer,35-44,Industria,53.5,9.6,600000,0,1,Parcial
