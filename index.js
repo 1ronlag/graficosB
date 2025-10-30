@@ -172,18 +172,18 @@ app.get("/api/trabajo/meta", async (_req, res) => {
 // (endpoints de tu servicio de educación si los usas)
 // =====================================================
 // Ejemplos (descomenta si tienes rutas en el front pidiendo esto):
-// app.get("/api/educacion/matricula/resumen", async (_req, res) => {
-//   try { res.json(await educacion.getMatriculaResumen()); }
-//   catch (e) { console.error("❌ /educacion/resumen:", e); res.status(500).json({ ok:false, error:"No se pudo obtener resumen" }); }
-// });
-// app.get("/api/educacion/series", async (_req, res) => {
-//   try { res.json(await educacion.getSeriesEducacion()); }
-//   catch (e) { console.error("❌ /educacion/series:", e); res.status(500).json({ ok:false, error:"No se pudo obtener series" }); }
-// });
-// app.get("/api/educacion/sexo", async (_req, res) => {
-//   try { res.json(await educacion.getMatriculaSexo()); }
-//   catch (e) { console.error("❌ /educacion/sexo:", e); res.status(500).json({ ok:false, error:"No se pudo obtener sexo" }); }
-// });
+app.get("/api/educacion/matricula/resumen", async (_req, res) => {
+  try { res.json(await educacion.getMatriculaResumen()); }
+  catch (e) { console.error("❌ /educacion/resumen:", e); res.status(500).json({ ok:false, error:"No se pudo obtener resumen" }); }
+});
+app.get("/api/educacion/series", async (_req, res) => {
+  try { res.json(await educacion.getSeriesEducacion()); }
+  catch (e) { console.error("❌ /educacion/series:", e); res.status(500).json({ ok:false, error:"No se pudo obtener series" }); }
+});
+app.get("/api/educacion/sexo", async (_req, res) => {
+  try { res.json(await educacion.getMatriculaSexo()); }
+  catch (e) { console.error("❌ /educacion/sexo:", e); res.status(500).json({ ok:false, error:"No se pudo obtener sexo" }); }
+});
 
 // =====================================================
 // ======================== SALUD ======================
