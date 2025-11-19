@@ -68,10 +68,22 @@ async function readCsvFlexible(filePath) {
 /* Números: limpia $ . , espacios y símbolos */
 const toNum = (v) => {
   if (v == null || v === "") return null;
-  const s = String(v)
-    .replace(/[^\d,.\-]/g, "") // deja solo dígitos, coma, punto, signo
-    .replace(/\./g, "") // quita separadores de miles
-    .replace(/,/g, "."); // coma -> punto
+  let s = String(v).trim();
+
+  // 1) Dejamos solo dígitos, punto, coma y signo
+  s = s.replace(/[^\d.,\-]/g, "");
+
+  if (s.includes(",")) {
+    // Caso formato latino: 1.234,5  ó  7,8
+    // → puntos como miles, coma como decimal
+    s = s.replace(/\./g, "").replace(/,/g, ".");
+  } else {
+    // Caso sin coma: 7.8, 21.4, 1000.5
+    // → asumimos punto decimal y NO lo borramos
+    // (si hubiera separador de miles con espacio ya lo quitamos arriba)
+    // aquí no hacemos nada extra con los puntos
+  }
+
   const n = Number(s);
   return Number.isFinite(n) ? n : null;
 };
